@@ -1,0 +1,14 @@
+{
+  "name": "@ci-cd-via-docker/config",
+  "version": "0.1.0",
+  "private": true,
+  "files": [
+    "tsconfig"
+  ],
+  "exports": {
+    "./tsconfig/base": "./tsconfig/base.json",
+    "./tsconfig/app": "./tsconfig/app.json",
+    "./tsconfig/server": "./tsconfig/server.json",
+    "./tsconfig/library": "./tsconfig/library.json"
+  }
+}

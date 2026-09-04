@@ -1,0 +1,10 @@
+{
+  "name": "@ci-cd-via-docker/http-server",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  }
+}
