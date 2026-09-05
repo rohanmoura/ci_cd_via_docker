@@ -2,6 +2,7 @@ import type { Message } from "@ci-cd-via-docker/shared";
 
 export interface MessageStore {
   create(content: string): Promise<Message>;
+  healthCheck(): Promise<void>;
   list(): Promise<Message[]>;
 }
 
@@ -22,6 +23,8 @@ export class InMemoryMessageStore implements MessageStore {
     this.#messages.unshift(message);
     return message;
   }
+
+  async healthCheck(): Promise<void> {}
 
   async list(): Promise<Message[]> {
     return [...this.#messages];

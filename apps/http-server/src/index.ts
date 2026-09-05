@@ -1,17 +1,13 @@
+import { createDatabase } from "@ci-cd-via-docker/database";
+
 import { createApp } from "./app";
 import { loadConfig } from "./config";
 import { HttpMessageEventPublisher } from "./events/message-event-publisher";
-import { InMemoryMessageStore } from "./store/message-store";
+import { PostgresMessageStore } from "./store/postgres-message-store";
 
 const config = loadConfig();
-const store = new InMemoryMessageStore([
-  {
-    id: "welcome-message",
-    content:
-      "HTTP server is online. The database will replace this memory store in Phase 6.",
-    createdAt: new Date().toISOString(),
-  },
-]);
+const database = createDatabase(config.databaseUrl);
+const store = new PostgresMessageStore(database.db);
 
 const app = createApp({
   corsOrigin: config.corsOrigin,
@@ -39,6 +35,7 @@ async function shutdown(signal: NodeJS.Signals) {
 
   console.log(`Received ${signal}. Finishing active requests before shutdown.`);
   await server.stop();
+  await database.close();
   process.exit(0);
 }
 

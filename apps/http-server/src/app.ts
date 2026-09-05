@@ -42,7 +42,9 @@ export function createApp(options: CreateAppOptions = {}) {
     }),
   );
 
-  app.get("/health", (context) => {
+  app.get("/health", async (context) => {
+    await store.healthCheck();
+
     const response: HealthResponse = {
       status: "ok",
       service: "http-server",

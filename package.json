@@ -15,7 +15,11 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "bun run --filter '*' typecheck",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "db:generate": "bun run --cwd packages/database db:generate",
+    "db:migrate": "bun run --cwd packages/database db:migrate",
+    "db:seed": "bun run --cwd packages/database db:seed",
+    "db:studio": "bun run --cwd packages/database db:studio"
   },
   "engines": {
     "bun": ">=1.4.1"

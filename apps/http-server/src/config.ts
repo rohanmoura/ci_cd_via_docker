@@ -16,6 +16,7 @@ function parsePort(value: string | undefined): number {
 
 export interface HttpServerConfig {
   corsOrigin: string;
+  databaseUrl: string;
   hostname: string;
   port: number;
   wsEventUrl: string;
@@ -27,6 +28,8 @@ export function loadConfig(
 ): HttpServerConfig {
   return {
     corsOrigin: environment.CORS_ORIGIN || DEFAULT_CORS_ORIGIN,
+    databaseUrl:
+      environment.DATABASE_URL || "postgresql://app:app@localhost:5432/app",
     hostname: environment.HTTP_SERVER_HOST || "0.0.0.0",
     port: parsePort(environment.HTTP_SERVER_PORT),
     wsEventUrl:
