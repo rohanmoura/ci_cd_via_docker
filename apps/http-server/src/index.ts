@@ -1,8 +1,41 @@
-export const httpServerService = {
-  name: "http-server",
-  port: 3001,
-} as const;
+import { createApp } from "./app";
+import { loadConfig } from "./config";
+import { InMemoryMessageStore } from "./store/message-store";
 
-console.log(
-  `${httpServerService.name} workspace is ready on port ${httpServerService.port}`,
-);
+const config = loadConfig();
+const store = new InMemoryMessageStore([
+  {
+    id: "welcome-message",
+    content:
+      "HTTP server is online. The database will replace this memory store in Phase 6.",
+    createdAt: new Date().toISOString(),
+  },
+]);
+
+const app = createApp({
+  corsOrigin: config.corsOrigin,
+  enableRequestLogging: true,
+  store,
+});
+
+const server = Bun.serve({
+  hostname: config.hostname,
+  port: config.port,
+  fetch: app.fetch,
+});
+
+console.log(`HTTP server listening at ${server.url}`);
+
+let isShuttingDown = false;
+
+async function shutdown(signal: NodeJS.Signals) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log(`Received ${signal}. Finishing active requests before shutdown.`);
+  await server.stop();
+  process.exit(0);
+}
+
+process.on("SIGINT", () => void shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));

@@ -16,6 +16,27 @@ export interface CreateMessageResponse {
   message: Message;
 }
 
+export interface CreateMessageRequest {
+  content: string;
+}
+
+export interface HealthResponse {
+  status: "ok";
+  service: "http-server" | "ws-server";
+  timestamp: string;
+}
+
+export interface ErrorResponse {
+  error: {
+    code: string;
+    message: string;
+    details?: Array<{
+      path: string;
+      message: string;
+    }>;
+  };
+}
+
 export interface MessageCreatedEvent {
   type: "message.created";
   data: Message;
