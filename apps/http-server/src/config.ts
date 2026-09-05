@@ -18,6 +18,8 @@ export interface HttpServerConfig {
   corsOrigin: string;
   hostname: string;
   port: number;
+  wsEventUrl: string;
+  wsInternalToken: string;
 }
 
 export function loadConfig(
@@ -27,5 +29,8 @@ export function loadConfig(
     corsOrigin: environment.CORS_ORIGIN || DEFAULT_CORS_ORIGIN,
     hostname: environment.HTTP_SERVER_HOST || "0.0.0.0",
     port: parsePort(environment.HTTP_SERVER_PORT),
+    wsEventUrl:
+      environment.WS_INTERNAL_EVENT_URL || "http://localhost:3002/events",
+    wsInternalToken: environment.WS_INTERNAL_TOKEN || "local-development-token",
   };
 }

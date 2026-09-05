@@ -41,3 +41,22 @@ export interface MessageCreatedEvent {
   type: "message.created";
   data: Message;
 }
+
+export interface ConnectionReadyEvent {
+  type: "connection.ready";
+  data: {
+    clientId: string;
+    connectedAt: string;
+  };
+}
+
+export interface PingEvent {
+  type: "ping";
+}
+
+export interface PongEvent {
+  type: "pong";
+  data: {
+    timestamp: string;
+  };
+}

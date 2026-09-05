@@ -1,5 +1,6 @@
 import { createApp } from "./app";
 import { loadConfig } from "./config";
+import { HttpMessageEventPublisher } from "./events/message-event-publisher";
 import { InMemoryMessageStore } from "./store/message-store";
 
 const config = loadConfig();
@@ -15,6 +16,10 @@ const store = new InMemoryMessageStore([
 const app = createApp({
   corsOrigin: config.corsOrigin,
   enableRequestLogging: true,
+  eventPublisher: new HttpMessageEventPublisher(
+    config.wsEventUrl,
+    config.wsInternalToken,
+  ),
   store,
 });
 

@@ -4,7 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "bun --watch src/index.ts",
-    "build": "tsc --noEmit",
+    "build": "bun build ./src/index.ts --outdir ./dist --target bun --sourcemap=external",
+    "start": "bun run dist/index.js",
+    "test": "bun test",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ci-cd-via-docker/shared": "workspace:*",
+    "zod": "^4.5.4"
   }
 }

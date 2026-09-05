@@ -3,10 +3,12 @@ import type {
   CreateMessageResponse,
   ErrorResponse,
   HealthResponse,
+  Message,
   MessagesResponse,
 } from "@ci-cd-via-docker/shared";
 
 import { createApp } from "./app";
+import type { MessageEventPublisher } from "./events/message-event-publisher";
 import { InMemoryMessageStore } from "./store/message-store";
 
 let store: InMemoryMessageStore;
@@ -51,6 +53,54 @@ describe("HTTP server", () => {
     const listResponse = await app.request("/messages");
     const list = (await listResponse.json()) as MessagesResponse;
     expect(list.messages).toEqual([created.message]);
+  });
+
+  test("publishes the created message for realtime delivery", async () => {
+    let publishedMessage: Message | undefined;
+    const publisher: MessageEventPublisher = {
+      async publishCreated(message) {
+        publishedMessage = message;
+      },
+    };
+    app = createApp({ eventPublisher: publisher, store });
+
+    const response = await app.request("/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: "Broadcast me" }),
+    });
+    const created = (await response.json()) as CreateMessageResponse;
+
+    expect(response.status).toBe(201);
+    expect(publishedMessage).toEqual(created.message);
+  });
+
+  test("keeps the stored message when realtime delivery fails", async () => {
+    const publisher: MessageEventPublisher = {
+      async publishCreated() {
+        throw new Error("WebSocket server unavailable");
+      },
+    };
+    let publishError: unknown;
+    app = createApp({
+      eventPublisher: publisher,
+      onPublishError: (error) => {
+        publishError = error;
+      },
+      store,
+    });
+
+    const response = await app.request("/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: "Keep this message" }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(publishError).toBeInstanceOf(Error);
+    expect((await store.list()).map((message) => message.content)).toEqual([
+      "Keep this message",
+    ]);
   });
 
   test("rejects invalid message content", async () => {

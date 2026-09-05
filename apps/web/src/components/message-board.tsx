@@ -62,41 +62,60 @@ export function MessageBoard() {
   }, []);
 
   useEffect(() => {
-    const socket = new WebSocket(WS_SERVER_URL);
+    let socket: WebSocket | undefined;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let reconnectDelay = 1_000;
+    let isDisposed = false;
 
-    socket.addEventListener("open", () => {
-      setSocketStatus("connected");
-      setNotice("Live updates are connected.");
-    });
+    function connect() {
+      if (isDisposed) return;
 
-    socket.addEventListener("message", (event) => {
-      try {
-        const parsed: unknown = JSON.parse(String(event.data));
-        if (!isMessageCreatedEvent(parsed)) return;
+      setSocketStatus("connecting");
+      socket = new WebSocket(WS_SERVER_URL);
 
-        setMessages((current) => {
-          const exists = current.some(
-            (message) => message.id === parsed.data.id,
-          );
-          return exists ? current : [parsed.data, ...current];
-        });
-      } catch {
-        setNotice("The WebSocket server sent an unreadable event.");
-      }
-    });
+      socket.addEventListener("open", () => {
+        reconnectDelay = 1_000;
+        setSocketStatus("connected");
+        setNotice("Live updates are connected.");
+      });
 
-    socket.addEventListener("close", () => {
-      setSocketStatus("disconnected");
-    });
+      socket.addEventListener("message", (event) => {
+        try {
+          const parsed: unknown = JSON.parse(String(event.data));
+          if (!isMessageCreatedEvent(parsed)) return;
 
-    socket.addEventListener("error", () => {
-      setSocketStatus("disconnected");
-      setNotice(
-        "WebSocket server is offline. We will connect it in a later phase.",
-      );
-    });
+          setMessages((current) => {
+            const exists = current.some(
+              (message) => message.id === parsed.data.id,
+            );
+            return exists ? current : [parsed.data, ...current];
+          });
+        } catch {
+          setNotice("The WebSocket server sent an unreadable event.");
+        }
+      });
 
-    return () => socket.close();
+      socket.addEventListener("close", () => {
+        if (isDisposed) return;
+
+        setSocketStatus("disconnected");
+        setNotice("Live updates disconnected. Retrying automatically…");
+        reconnectTimer = setTimeout(connect, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, 10_000);
+      });
+
+      socket.addEventListener("error", () => {
+        socket?.close();
+      });
+    }
+
+    connect();
+
+    return () => {
+      isDisposed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      socket?.close();
+    };
   }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {

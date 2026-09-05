@@ -10,6 +10,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { z } from "zod";
 
+import type { MessageEventPublisher } from "./events/message-event-publisher";
 import { InMemoryMessageStore, type MessageStore } from "./store/message-store";
 
 const createMessageSchema = z.object({
@@ -19,6 +20,8 @@ const createMessageSchema = z.object({
 interface CreateAppOptions {
   corsOrigin?: string;
   enableRequestLogging?: boolean;
+  eventPublisher?: MessageEventPublisher;
+  onPublishError?: (error: unknown) => void;
   store?: MessageStore;
 }
 
@@ -90,8 +93,25 @@ export function createApp(options: CreateAppOptions = {}) {
     }
 
     const request: CreateMessageRequest = result.data;
+    const message = await store.create(request.content);
+
+    if (options.eventPublisher) {
+      try {
+        await options.eventPublisher.publishCreated(message);
+      } catch (error) {
+        if (options.onPublishError) {
+          options.onPublishError(error);
+        } else {
+          console.error(
+            "Message stored, but realtime broadcast failed.",
+            error,
+          );
+        }
+      }
+    }
+
     const response: CreateMessageResponse = {
-      message: await store.create(request.content),
+      message,
     };
 
     return context.json(response, 201);

@@ -41,6 +41,10 @@
     "apps/ws-server": {
       "name": "@ci-cd-via-docker/ws-server",
       "version": "0.1.0",
+      "dependencies": {
+        "@ci-cd-via-docker/shared": "workspace:*",
+        "zod": "^4.5.4",
+      },
     },
     "packages/config": {
       "name": "@ci-cd-via-docker/config",
