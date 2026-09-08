@@ -1,0 +1,275 @@
+name: Docker Compose CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Har CI run ka isolated Compose project name
+  COMPOSE_PROJECT_NAME: ci-cd-compose-${{ github.run_id }}
+
+  # CI-only test credentials; production secrets nahi hain
+  POSTGRES_USER: app
+  POSTGRES_PASSWORD: ci-test-password
+  POSTGRES_DB: app
+
+  WS_INTERNAL_TOKEN: ci-test-internal-token
+
+  WEB_PORT: 3000
+  HTTP_SERVER_PORT: 3001
+  WS_SERVER_PORT: 3002
+
+  CORS_ORIGIN: http://localhost:3000
+  NEXT_PUBLIC_HTTP_SERVER_URL: http://localhost:3001
+  NEXT_PUBLIC_WS_SERVER_URL: ws://localhost:3002
+
+jobs:
+  quality:
+    name: Code quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.1
+
+      - name: Install dependencies
+        run: bun ci
+
+      - name: Check formatting
+        run: bun run format:check
+
+      - name: Run lint
+        run: bun run lint
+
+      - name: Run typecheck
+        run: bun run typecheck
+
+      - name: Run tests
+        run: bun run test
+
+      - name: Build applications
+        run: bun run build
+
+  compose:
+    name: Compose integration test
+    runs-on: ubuntu-latest
+    needs:
+      - quality
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Show Docker versions
+        run: |
+          docker version
+          docker compose version
+
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+
+      - name: Show resolved services
+        run: |
+          docker compose config --services
+          docker compose config --images
+
+      - name: Check Docker build configuration
+        run: docker compose build --check
+
+      - name: Build Compose images
+        run: docker compose build
+
+      - name: Inspect built images
+        run: docker compose images
+
+      - name: Start complete stack
+        run: docker compose up --detach --no-build
+
+      - name: Verify migration completed
+        run: |
+          set -euo pipefail
+
+          migration_id="$(docker compose ps --all --quiet migrate)"
+
+          if [[ -z "$migration_id" ]]; then
+            echo "Migration container was not created."
+            exit 1
+          fi
+
+          migration_exit_code="$(
+            docker inspect \
+              --format '{{.State.ExitCode}}' \
+              "$migration_id"
+          )"
+
+          if [[ "$migration_exit_code" != "0" ]]; then
+            echo "Migration failed with exit code: $migration_exit_code"
+            docker compose logs migrate
+            exit 1
+          fi
+
+          echo "Migration completed successfully."
+
+      - name: Wait for healthy services
+        run: |
+          set -euo pipefail
+
+          for service in postgres ws http web; do
+            echo "Waiting for $service..."
+
+            container_id="$(docker compose ps --quiet "$service")"
+
+            if [[ -z "$container_id" ]]; then
+              echo "$service container was not created."
+              exit 1
+            fi
+
+            healthy="false"
+
+            for attempt in $(seq 1 30); do
+              status="$(
+                docker inspect \
+                  --format '{{.State.Health.Status}}' \
+                  "$container_id"
+              )"
+
+              echo "$service health: $status"
+
+              if [[ "$status" == "healthy" ]]; then
+                healthy="true"
+                break
+              fi
+
+              if [[ "$status" == "unhealthy" ]]; then
+                docker compose logs "$service"
+                exit 1
+              fi
+
+              sleep 2
+            done
+
+            if [[ "$healthy" != "true" ]]; then
+              echo "$service did not become healthy in time."
+              docker compose logs "$service"
+              exit 1
+            fi
+          done
+
+      - name: Show container status
+        run: docker compose ps --all
+
+      - name: Test health endpoints
+        run: |
+          curl --fail --silent --show-error \
+            http://127.0.0.1:3000 \
+            | grep --fixed-strings "Realtime Messages Lab"
+
+          curl --fail --silent --show-error \
+            http://127.0.0.1:3001/health \
+            | grep --fixed-strings '"status":"ok"'
+
+          curl --fail --silent --show-error \
+            http://127.0.0.1:3002/health \
+            | grep --fixed-strings '"status":"ok"'
+      - name: Create test message
+        run: |
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --request POST \
+            --header "Content-Type: application/json" \
+            --data '{"content":"Docker Compose CI persistence check"}' \
+            http://127.0.0.1:3001/messages \
+            | tee /tmp/created-message.json
+
+          grep \
+            --fixed-strings \
+            "Docker Compose CI persistence check" \
+            /tmp/created-message.json
+
+      - name: Verify message in PostgreSQL
+        run: |
+          result="$(
+            docker compose exec --no-TTY postgres \
+              psql \
+              --username "$POSTGRES_USER" \
+              --dbname "$POSTGRES_DB" \
+              --tuples-only \
+              --no-align \
+              --command "
+                SELECT COUNT(*)
+                FROM messages
+                WHERE content = 'Docker Compose CI persistence check';
+              "
+          )"
+
+          if [[ "$result" != "1" ]]; then
+            echo "Expected one persisted message, received: $result"
+            exit 1
+          fi
+
+          echo "Message exists inside PostgreSQL."
+
+      - name: Restart HTTP container
+        run: docker compose restart http
+
+      - name: Wait for HTTP after restart
+        run: |
+          curl \
+            --retry 30 \
+            --retry-delay 2 \
+            --retry-all-errors \
+            --fail \
+            --silent \
+            --show-error \
+            http://127.0.0.1:3001/health
+
+      - name: Verify persistence after restart
+        run: |
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            http://127.0.0.1:3001/messages \
+            | tee /tmp/messages-after-restart.json
+
+          grep \
+            --fixed-strings \
+            "Docker Compose CI persistence check" \
+            /tmp/messages-after-restart.json
+
+      - name: Show failure diagnostics
+        if: failure()
+        run: |
+          docker compose ps --all || true
+          docker compose logs --no-color --timestamps || true
+
+      - name: Stop and remove Compose resources
+        if: always()
+        run: |
+          docker compose down \
+            --volumes \
+            --remove-orphans \
+            --timeout 10
