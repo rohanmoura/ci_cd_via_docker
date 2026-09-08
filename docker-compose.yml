@@ -1,0 +1,147 @@
+name: ci-cd-via-docker
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    networks:
+      - app-network
+
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  migrate:
+    image: project-migrate:compose
+    pull_policy: build
+
+    build:
+      context: .
+      dockerfile: apps/http-server/Dockerfile
+      target: migrator
+
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-app}
+
+    networks:
+      - app-network
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    restart: "no"
+
+  ws:
+    image: project-ws:compose
+    pull_policy: build
+
+    build:
+      context: .
+      dockerfile: apps/ws-server/Dockerfile
+
+    init: true
+    restart: unless-stopped
+
+    environment:
+      NODE_ENV: production
+      WS_SERVER_HOST: 0.0.0.0
+      WS_SERVER_PORT: 3002
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      WS_INTERNAL_TOKEN: ${WS_INTERNAL_TOKEN:-local-development-token}
+
+    ports:
+      - "${WS_SERVER_PORT:-3002}:3002"
+
+    networks:
+      - app-network
+
+  http:
+    image: project-http:compose
+    pull_policy: build
+
+    build:
+      context: .
+      dockerfile: apps/http-server/Dockerfile
+
+    init: true
+    restart: unless-stopped
+
+    environment:
+      NODE_ENV: production
+      HTTP_SERVER_HOST: 0.0.0.0
+      HTTP_SERVER_PORT: 3001
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+
+      DATABASE_URL: postgresql://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-app}
+
+      WS_INTERNAL_EVENT_URL: http://ws:3002/events
+      WS_INTERNAL_TOKEN: ${WS_INTERNAL_TOKEN:-local-development-token}
+
+    ports:
+      - "${HTTP_SERVER_PORT:-3001}:3001"
+
+    networks:
+      - app-network
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+      migrate:
+        condition: service_completed_successfully
+
+      ws:
+        condition: service_healthy
+
+  web:
+    image: project-web:compose
+    pull_policy: build
+
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+
+      args:
+        NEXT_PUBLIC_HTTP_SERVER_URL: ${NEXT_PUBLIC_HTTP_SERVER_URL:-http://localhost:3001}
+        NEXT_PUBLIC_WS_SERVER_URL: ${NEXT_PUBLIC_WS_SERVER_URL:-ws://localhost:3002}
+
+    init: true
+    restart: unless-stopped
+
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+    networks:
+      - app-network
+
+    depends_on:
+      http:
+        condition: service_healthy
+
+      ws:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+
+networks:
+  app-network:
+    driver: bridge

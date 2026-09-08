@@ -19,6 +19,18 @@ COPY packages/shared/package.json ./packages/shared/package.json
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --frozen-lockfile
 
+# One-time database migration image
+FROM dependencies AS migrator
+
+WORKDIR /app
+
+COPY . .
+
+ENV NODE_ENV=production
+
+CMD ["bun", "run", "db:migrate"]
+
+
 # Stage 2: Build server bundle
 FROM dependencies AS builder
 
@@ -44,7 +56,7 @@ USER bun
 
 EXPOSE 3001
 
-HEALTHCHECK --interval=30s --timeout=5s --start-interval=10s --retries=3 \
+HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
     CMD ["bun", "-e", "const p=Bun.env.HTTP_SERVER_PORT||'3001';const r=await fetch('http://127.0.0.1:'+p+'/health');if(!r.ok)process.exit(1)"]
 
 CMD ["bun", "index.js"]
